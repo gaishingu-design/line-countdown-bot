@@ -666,6 +666,17 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
         return
 
+    if text == "志望校リセット":
+        if user_id in user_school:
+            old_school = user_school.pop(user_id)
+            user_state[user_id] = None
+            save_data()
+            reply = f"🗑️ 志望校「{old_school}」をリセットしました。\n\n「志望校設定」と送ると再設定できます。"
+        else:
+            reply = "まだ志望校が設定されていません。\n「志望校設定」と送って登録してください🏫"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+        return
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
