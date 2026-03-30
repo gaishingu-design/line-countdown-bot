@@ -1,10 +1,10 @@
 from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, FollowEvent
-from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import date
 import json
 import os
+import threading
 
 app = Flask(__name__)
 line_bot_api = LineBotApi(os.environ['LINE_ACCESS_TOKEN'])
@@ -586,9 +586,8 @@ def send_daily_notifications():
             line_bot_api.push_message(user_id, TextSendMessage(text=message))
 
 
-scheduler = BackgroundScheduler(timezone="Asia/Tokyo")
-scheduler.add_job(send_daily_notifications, 'cron', hour=12, minute=0)
-scheduler.start()
+# APSchedulerは削除してエンドポイント方式に変更
+# cron-job.org から毎日12時(JST)=03:00(UTC)に叩いてもらう
 
 # ============================================================
 # 志望校一覧メッセージ
@@ -628,6 +627,16 @@ def handle_follow(event):
 def handle_message(event):
     user_id = event.source.user_id
     text = event.message.text.strip()
+
+    # 志望校未設定のユーザーには何を送っても志望校一覧を表示
+    if user_id not in user_school and user_state.get(user_id) != "waiting_school":
+        user_state[user_id] = "waiting_school"
+        save_data()
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=get_school_list_message())
+        )
+        return
 
     if text == "志望校設定":
         user_state[user_id] = "waiting_school"
@@ -676,13 +685,22 @@ def handle_message(event):
         return
 
 
+@app.route("/notify", methods=["GET", "POST"])
+def notify():
+    send_daily_notifications()
+    return "通知送信完了", 200
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     body = request.get_data(as_text=True)
     signature = request.headers['X-Line-Signature']
-    handler.handle(body, signature)
-    return "OK"
+    # 別スレッドで処理してLINEに即座に200を返す
+    threading.Thread(target=handler.handle, args=(body, signature)).start()
+    return "OK", 200
+
+@app.route("/", methods=["GET"])
+def health_check():
+    return "OK", 200
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(port=5000)
