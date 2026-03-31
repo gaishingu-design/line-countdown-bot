@@ -502,6 +502,8 @@ EXAM_KEYS = {
     "芝浦工業大学 入試", "東京電機大学 入試",
     "工学院大学 入試", "東京都市大学 入試",
 }
+KYOTSU_KEY = "共通テスト本番"
+
 import requests as req
 
 SUPABASE_URL = os.environ['SUPABASE_URL']
