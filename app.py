@@ -502,24 +502,51 @@ EXAM_KEYS = {
     "芝浦工業大学 入試", "東京電機大学 入試",
     "工学院大学 入試", "東京都市大学 入試",
 }
-KYOTSU_KEY = "共通テスト本番"
+import requests as req
+
+SUPABASE_URL = os.environ['SUPABASE_URL']
+SUPABASE_KEY = os.environ['SUPABASE_KEY']
+HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json"
+}
 
 # ============================================================
-# データの保存・読み込み
+# データの保存・読み込み（Supabase）
 # ============================================================
-DATA_FILE = "user_data.json"
-
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data.get("user_school", {}), data.get("user_state", {})
-    return {}, {}
+    """Supabaseから全ユーザーの志望校を読み込む"""
+    try:
+        res = req.get(f"{SUPABASE_URL}/rest/v1/user_schools?select=*", headers=HEADERS)
+        rows = res.json()
+        school = {r["user_id"]: r["school"] for r in rows}
+        return school, {}
+    except Exception as e:
+        print(f"[load_data] エラー: {e}")
+        return {}, {}
 
-def save_data():
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump({"user_school": user_school, "user_state": user_state},
-                  f, ensure_ascii=False, indent=2)
+def save_user_school(user_id, school_name):
+    """ユーザーの志望校をSupabaseに保存（upsert）"""
+    try:
+        data = {"user_id": user_id, "school": school_name}
+        req.post(
+            f"{SUPABASE_URL}/rest/v1/user_schools",
+            headers={**HEADERS, "Prefer": "resolution=merge-duplicates"},
+            json=data
+        )
+    except Exception as e:
+        print(f"[save_user_school] エラー: {e}")
+
+def delete_user_school(user_id):
+    """ユーザーの志望校をSupabaseから削除"""
+    try:
+        req.delete(
+            f"{SUPABASE_URL}/rest/v1/user_schools?user_id=eq.{user_id}",
+            headers=HEADERS
+        )
+    except Exception as e:
+        print(f"[delete_user_school] エラー: {e}")
 
 # 起動時に読み込む
 user_school, user_state = load_data()
@@ -580,10 +607,15 @@ def build_notification(user_id):
 
 
 def send_daily_notifications():
+    print(f"[notify] 通知開始 user数: {len(user_school)}")
     for user_id in list(user_school.keys()):
-        message = build_notification(user_id)
-        if message:
-            line_bot_api.push_message(user_id, TextSendMessage(text=message))
+        try:
+            message = build_notification(user_id)
+            if message:
+                line_bot_api.push_message(user_id, TextSendMessage(text=message))
+                print(f"[notify] 送信成功: {user_id}")
+        except Exception as e:
+            print(f"[notify] 送信失敗: {user_id} エラー: {e}")
 
 
 # APSchedulerは削除してエンドポイント方式に変更
@@ -631,7 +663,6 @@ def handle_message(event):
     # 志望校未設定のユーザーには何を送っても志望校一覧を表示
     if user_id not in user_school and user_state.get(user_id) != "waiting_school":
         user_state[user_id] = "waiting_school"
-        save_data()
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=get_school_list_message())
@@ -640,7 +671,6 @@ def handle_message(event):
 
     if text == "志望校設定":
         user_state[user_id] = "waiting_school"
-        save_data()
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=get_school_list_message())
@@ -652,7 +682,7 @@ def handle_message(event):
         if school_name in SCHOOL_SCHEDULES:
             user_school[user_id] = school_name
             user_state[user_id] = None
-            save_data()
+            save_user_school(user_id, school_name)  # Supabaseに保存
             reply = f"✅ 志望校を「{school_name}」に設定しました！\n\n"
             reply += get_schedule_text(school_name)
             reply += "\n\n🔔 毎日12時に以下の内容を通知します\n　・一番近い模試までの日数\n　・共通テストまでの日数\n　・二次試験（入試本番）までの日数"
@@ -677,7 +707,7 @@ def handle_message(event):
         if user_id in user_school:
             old_school = user_school.pop(user_id)
             user_state[user_id] = None
-            save_data()
+            delete_user_school(user_id)  # Supabaseから削除
             reply = f"🗑️ 志望校「{old_school}」をリセットしました。\n\n「志望校設定」と送ると再設定できます。"
         else:
             reply = "まだ志望校が設定されていません。\n「志望校設定」と送って登録してください🏫"
