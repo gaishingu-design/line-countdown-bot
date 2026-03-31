@@ -687,8 +687,9 @@ def handle_message(event):
 
 @app.route("/notify", methods=["GET", "POST"])
 def notify():
+    print(f"[notify] user_school: {user_school}")
     send_daily_notifications()
-    return "通知送信完了", 200
+    return "OK", 200
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
