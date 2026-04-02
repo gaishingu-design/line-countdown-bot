@@ -717,11 +717,21 @@ def handle_message(event):
         return
 
 
+from datetime import datetime
+
 @app.route("/notify", methods=["GET", "POST"])
 def notify():
-    print(f"[notify] user_school: {user_school}")
-    send_daily_notifications()
-    return "OK", 200
+    now = datetime.now()
+
+    # 日本時間12:00〜12:04だけ送信
+    if now.hour == 12 and now.minute < 5:
+        print("[notify] 送信実行")
+        send_daily_notifications()
+        return "sent", 200
+
+    print("[notify] skip")
+    return "skip", 200
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
