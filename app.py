@@ -717,19 +717,20 @@ def handle_message(event):
         return
 
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+JST = timezone(timedelta(hours=9))
 
 @app.route("/notify", methods=["GET", "POST"])
 def notify():
-    now = datetime.now()
+    now = datetime.now(JST)
 
-    # 日本時間12:00〜12:04だけ送信
     if now.hour == 12 and now.minute < 5:
         print("[notify] 送信実行")
         send_daily_notifications()
         return "sent", 200
 
-    print("[notify] skip")
+    print(f"[notify] skip {now}")
     return "skip", 200
 
 
